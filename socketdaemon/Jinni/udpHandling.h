@@ -16,7 +16,7 @@
 int jinni_UDP_to_fins(u_char *dataLocal, int len, uint16_t dstport,
 		uint32_t dst_IP_netformat, uint16_t hostport,
 		uint32_t host_IP_netformat);
-int readFrom_fins(int senderid, int sockfd, u_char **buf, int *buflen,
+int UDPreadFrom_fins(int senderid, int sockfd, u_char **buf, int *buflen,
 		int symbol, struct sockaddr_in *address, int block_flag);
 
 void socket_udp(int domain, int type, int protocol, int sockfd, int fakeID,
@@ -36,11 +36,11 @@ void sendto_udp(int senderid, int sockfd, int datalen, u_char *data, int flags,
 void recvfrom_udp(int senderid, int sockfd, int datalen, int flags, int symbol);
 void sendmsg_udp();
 void recvmsg_udp();
-void getsockopt_udp();
-void setsockopt_udp();
+void getsockopt_udp(int senderid, int sockfd, int level, int optname, int optlen, void *optval);
+void setsockopt_udp(int senderid, int sockfd, int level, int optname, int optlen, void *optval);
 void listen_udp();
 void accept_udp();
 void accept4_udp();
-void shutdown_udp();
+void shutdown_udp(int senderid,int sockfd,int how);
 
 #endif /* UDPHANDLING_H_ */

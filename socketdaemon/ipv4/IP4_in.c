@@ -28,6 +28,7 @@ void IP4_in(struct finsFrame *ff, struct ip4_packet* ppacket, int len) {
 	header.fragmentation_offset = ntohs(ppacket->ip_fragoff) & IP4_FRAGOFF;
 	header.ttl = ppacket->ip_ttl;
 	header.protocol = ppacket->ip_proto;
+	PRINT_DEBUG("protocol number is %d",header.protocol);
 	header.checksum = ntohs(ppacket->ip_cksum);
 
 	PRINT_DEBUG();
@@ -65,6 +66,7 @@ void IP4_in(struct finsFrame *ff, struct ip4_packet* ppacket, int len) {
 		stats.badlen++;
 		PRINT_DEBUG("The declared length is not equal to the actual length.");
 		if (header.packet_length > len) {
+			PRINT_DEBUG("The header length is even longer than the len");
 			stats.droppedtotal++;
 			//free ppacket
 			return;

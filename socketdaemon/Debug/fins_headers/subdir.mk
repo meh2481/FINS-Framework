@@ -4,12 +4,15 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../fins_headers/finstypes.c \
 ../fins_headers/metadata.c 
 
 OBJS += \
+./fins_headers/finstypes.o \
 ./fins_headers/metadata.o 
 
 C_DEPS += \
+./fins_headers/finstypes.d \
 ./fins_headers/metadata.d 
 
 

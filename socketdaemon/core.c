@@ -117,6 +117,38 @@ char meen_sem_name2[] = "main_channel2";
 
 
 /**
+ * @brief read the core parameters from the configuraions file called fins.cfg
+ * @param
+ * @return nothing
+ */
+void read_configurations()
+{
+
+	 config_t cfg;
+	  config_setting_t *setting;
+	  const char *str;
+
+	  config_init(&cfg);
+
+	  /* Read the file. If there is an error, report it and exit. */
+	  if(! config_read_file(&cfg, "fins.cfg"))
+	  {
+	    fprintf(stderr, "%s:%d - %s\n", config_error_file(&cfg),
+	            config_error_line(&cfg), config_error_text(&cfg));
+	    config_destroy(&cfg);
+	    return(EXIT_FAILURE);
+	  }
+
+
+
+	  config_destroy(&cfg);
+	  return(EXIT_SUCCESS);
+	}
+
+
+
+
+/**
  * @brief initialize the jinni sockets array by filling with value of -1
  * @param
  * @return nothing
@@ -128,6 +160,7 @@ void init_jinnisockets() {
 		jinniSockets[i].sockfd = -1;
 		jinniSockets[i].fakeID = -1;
 		jinniSockets[i].connection_status = 0;
+
 	}
 
 }
@@ -212,7 +245,7 @@ void Queues_init() {
 
 }
 
-void jinni_init() {
+void commChannel_init(){
 
 	/** the semaphore is initially locked */
 	//meen_channel_semaphore1 = sem_open(meen_sem_name1,O_CREAT|O_EXCL,0644,0);
@@ -264,6 +297,9 @@ void jinni_init() {
 
 }
 
+
+
+
 void *Switch_to_Jinni() {
 
 	struct finsFrame *ff;
@@ -275,8 +311,9 @@ void *Switch_to_Jinni() {
 	PRINT_DEBUG("readFromSwitch_to_Jinni THREAD");
 
 	while (1) {
+
 		sem_wait(&Switch_to_Jinni_Qsem);
-		ff = read_queue(Switch_to_Jinni_Queue);
+			ff = read_queue(Switch_to_Jinni_Queue);
 		sem_post(&Switch_to_Jinni_Qsem);
 
 		if (ff == NULL) {
@@ -304,23 +341,62 @@ void *Switch_to_Jinni() {
 			hostip = ntohl(hostip);
 
 			PRINT_DEBUG("NETFORMAT %d,%d,%d,%d,%d,",protocol,hostip,dstip,hostport,dstport);
-			index = matchjinniSocket(dstport, dstip, protocol);
-			PRINT_DEBUG("index %d", index);
-			if (index != -1) {
-				sem_wait(&(jinniSockets[index].Qs));
-				write_queue(ff, jinniSockets[index].dataQueue);
-				sem_post(&(jinniSockets[index].Qs));
-				PRINT_DEBUG("pdu lenght %d",ff->dataFrame.pduLength);
 
-			}
+			/**
+			 * check if this datagram comes from the address this socket has been previously
+			 * connected to it (Only if the socket is already connected to certain address)
+			 */
+						if (jinniSockets[index].connection_status > 0)
+						{
 
-			else {
-				PRINT_DEBUG();
+							PRINT_DEBUG("ICMPP shoud not enter here at all");
+							if ( (hostport != jinniSockets[index].dstport) || (hostip != jinniSockets[index].dst_IP ) )
+								{
+									PRINT_DEBUG("Wrong address, the socket is already connected to another destination");
 
-				freeFinsFrame(ff);
-			}
-		} else {
-			PRINT_DEBUG();
+									freeFinsFrame(ff);
+									continue;
+
+								}
+
+						}
+						/**
+						 * check if this received datagram destIP and destport matching which socket hostIP
+						 * and hostport insidee our sockets database
+						 */
+						if (protocol == IPPROTO_ICMP){
+							index = matchjinniSocket(0, hostip, protocol);
+						}
+
+						else{
+
+							index = matchjinniSocket(dstport, dstip, protocol);
+						}
+
+
+						PRINT_DEBUG("index %d", index);
+						if (index != -1) {
+							sem_wait(&(jinniSockets[index].Qs));
+							/**
+							 * TODO Replace The data Queue with a pipeLine at least for
+							 * the RAW DATA in order to find a natural way to support
+							 * Blocking and Non-Blocking mode
+							 */
+							write_queue(ff, jinniSockets[index].dataQueue);
+							sem_post(&(jinniSockets[index].Qs));
+							PRINT_DEBUG("pdu lenght %d",ff->dataFrame.pduLength);
+
+						}
+
+						else {
+							PRINT_DEBUG();
+
+							freeFinsFrame(ff);
+						}
+		}
+		else {
+
+			PRINT_DEBUG("unknown FINS Frame type NOT DATA NOT CONTROL !!!Probably FORMAT ERROR");
 
 		} // end of if , else if , else statement
 
@@ -339,13 +415,9 @@ void *interceptor_to_jinni() {
 	u_int opcode;
 	pid_t sender;
 
-	/** 1. init the Jinni sockets database
-	 * 2. Init the queues connecting Jinnin to thw FINS Switch
-	 */
 
-	//	init_jinnisockets();
-	//	Queues_init();
-	jinni_init();
+
+	commChannel_init();
 
 	int counter = 0;
 	PRINT_DEBUG("");
@@ -367,12 +439,10 @@ void *interceptor_to_jinni() {
 		sem_wait(meen_channel_semaphore2);
 		PRINT_DEBUG("7777");
 
-		numOfBytes = read(socket_channel_desc, &sender, sizeof(pid_t));
+		numOfBytes =  read(socket_channel_desc, &sender, sizeof(pid_t));
 		numOfBytes = read(socket_channel_desc, &opcode, sizeof(u_int));
 		PRINT_DEBUG("%d", sender);
-		//read(socket_channel_desc, &sender,sizeof(int));
-		//read(socket_channel_desc, &opcode, sizeof(int));
-		//sem_post(meen_channel_semaphore);
+
 
 		if (numOfBytes <= 0) {
 			PRINT_DEBUG("READING ERROR");
@@ -386,58 +456,69 @@ void *interceptor_to_jinni() {
 		switch (opcode) {
 
 		case socket_call:
-			socket_call_handler(sender);
+			socket_call_handler(sender);	//DONE
 			break;
 		case socketpair_call:
-			socketpair_call_handler();
+			socketpair_call_handler(sender);
 			break;
 		case bind_call:
-			bind_call_handler(sender);
+			bind_call_handler(sender);				//DONE
 			break;
 		case getsockname_call:
-			getsockname_call_handker();
+			getsockname_call_handker(sender);		//DONE
 			break;
 		case connect_call:
-			connect_call_handler(sender);
+			connect_call_handler(sender);			//DONE
 			break;
 		case getpeername_call:
-			getpeername_call_handler(sender);
+			getpeername_call_handler(sender);		//DONE
 			break;
+			/**
+			 * the write call is encapuslated as a send call with the
+			 * parameter flags = -1000  			//DONE
+			 */
 		case send_call:
-			send_call_handler(sender);
+			send_call_handler(sender);				//DONE
 			break;
 		case recv_call:
-			recv_call_handler(sender);
+			recv_call_handler(sender);				//DONE
 			break;
 		case sendto_call:
-			sendto_call_handler(sender);
+			sendto_call_handler(sender);			//DONE
 			break;
 		case recvfrom_call:
-			recvfrom_call_handler(sender);
+			recvfrom_call_handler(sender);		//DONE
 			break;
 		case sendmsg_call:
-			sendmsg_call_handler();
+			sendmsg_call_handler(sender);		//DONE
 			break;
 		case recvmsg_call:
-			recvmsg_call_handler();
+			recvmsg_call_handler(sender);
 			break;
 		case getsockopt_call:
-			getsockopt_call_handler();
+			getsockopt_call_handler(sender);		//Dummy response
 			break;
 		case setsockopt_call:
-			setsockopt_call_handler();
+			setsockopt_call_handler(sender);		// Dummy response
 			break;
 		case listen_call:
-			listen_call_handler();
+			listen_call_handler(sender);
 			break;
 		case accept_call:
-			accept_call_handler();
+			accept_call_handler(sender);
 			break;
 		case accept4_call:
-			accept4_call_handler();
+			accept4_call_handler(sender);
 			break;
 		case shutdown_call:
-			shutdown_call_handler();
+			shutdown_call_handler(sender);			//DONE
+			break;
+		case close_call:
+			/**
+			 * TODO fix the problem into remove jinnisockets
+			 * the Queue Terminate function has a bug as explained into it
+			 */
+			close_call_handler(sender);
 			break;
 		default: {
 			PRINT_DEBUG("unknown opcode read from the socket main channel ! CRASHING");
@@ -603,10 +684,11 @@ void *Inject() {
 		/** TODO Fill the dest and src with the correct MAC addresses
 		 * you receive from the ARP module
 		 */
-		char dest[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-		char src[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-		//char dest[]={0x00,0x1c,0xbf,0x8b,0x9c,0x9d};
-		//char src[]={0x00,0x1c,0xbf,0x87,0x1a,0xfd};
+		//char dest[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+		//char src[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+		char dest[]={0x00,0x1c,0xbf,0x86,0xd2,0xda};		// Mark Machine
+		char src[]={0x00,0x1c,0xbf,0x87,0x1a,0xfd};
 
 
 		memcpy(((struct sniff_ethernet *) frame)->ether_dhost, dest,
@@ -686,12 +768,16 @@ void cap_inj_init() {
 }
 
 int main() {
-	/** 	initialize the datebase
-	 * initialize the major queues
-	 */
 
+
+	/** 1. init the Jinni sockets database
+	 * 2. Init the queues connecting Jinnin to thw FINS Switch
+	 * 3.
+	 */
+//	read_configurations();
 	init_jinnisockets();
 	Queues_init();
+
 
 	cap_inj_init();
 
@@ -722,7 +808,7 @@ int main() {
 	pthread_create(&udp_thread, NULL, UDP, NULL);
 //	pthread_create(&rtm_thread, NULL, RTM, NULL);
 
-//	pthread_create(&icmp_thread,NULL,ICMP,NULL);
+	pthread_create(&icmp_thread,NULL,ICMP,NULL);
 //	pthread_create(&tcp_thread,NULL,TCP,NULL);
 
 	pthread_create(&ipv4_thread, NULL, IPv4, NULL);
@@ -744,10 +830,10 @@ int main() {
 
 	pthread_join(switch_thread, NULL);
 	pthread_join(udp_thread, NULL);
-	pthread_join(tcp_thread, NULL);
-	pthread_join(icmp_thread, NULL);
+//	pthread_join(tcp_thread, NULL);
+//	pthread_join(icmp_thread, NULL);
 	pthread_join(ipv4_thread, NULL);
-	pthread_join(arp_thread, NULL);
+//	pthread_join(arp_thread, NULL);
 
 
 
@@ -759,98 +845,4 @@ int main() {
 	return (1);
 
 }
-
-/*--------------------------------------------------------------------*/
-
-/** special functions to print the data within a frame for testing*/
-void print_hex_ascii_line(const u_char *payload, int len, int offset) {
-
-	int i;
-	int gap;
-	const u_char *ch;
-
-	/* offset */
-	printf("%05d   ", offset);
-
-	/* hex */
-	ch = payload;
-	for (i = 0; i < len; i++) {
-		printf("%02x ", *ch);
-		ch++;
-		/* print extra space after 8th byte for visual aid */
-		if (i == 7)
-			printf(" ");
-	}
-	/* print space to handle line less than 8 bytes */
-	if (len < 8)
-		printf(" ");
-
-	/* fill hex gap with spaces if not full line */
-	if (len < 16) {
-		gap = 16 - len;
-		for (i = 0; i < gap; i++) {
-			printf("   ");
-		}
-	}
-	printf("   ");
-
-	/* ascii (if printable) */
-	ch = payload;
-	for (i = 0; i < len; i++) {
-		if (isprint(*ch))
-			printf("%c", *ch);
-		else
-			printf(".");
-		ch++;
-	}
-
-	printf("\n");
-
-	return;
-
-} //end of print_hex_ascii_line()
-
-
-void print_frame(const u_char *payload, int len) {
-
-	PRINT_DEBUG("passed len = %d", len);
-	int len_rem = len;
-	int line_width = 16; /* number of bytes per line */
-	int line_len;
-	int offset = 0; /* zero-based offset counter */
-	const u_char *ch = payload;
-
-	if (len <= 0)
-		return;
-
-	/* data fits on one line */
-	if (len <= line_width) {
-		PRINT_DEBUG("calling hex_ascii_line");
-		print_hex_ascii_line(ch, len, offset);
-		return;
-	}
-
-	/* data spans multiple lines */
-	for (;;) {
-		/* compute current line length */
-		line_len = line_width % len_rem;
-		/* print line */
-		print_hex_ascii_line(ch, line_len, offset);
-		/* compute total remaining */
-		len_rem = len_rem - line_len;
-		/* shift pointer to remaining bytes to print */
-		ch = ch + line_len;
-		/* add offset */
-		offset = offset + line_width;
-		/* check if we have line width chars or less */
-		if (len_rem <= line_width) {
-			/* print last line and get out */
-			print_hex_ascii_line(ch, len_rem, offset);
-			break;
-		}
-	}
-
-	return;
-} // end of print_frame
-/** ---------------------------------------------------------*/
 

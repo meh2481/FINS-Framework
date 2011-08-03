@@ -46,11 +46,11 @@ void arp_in(struct finsFrame *fins_received){
 			}
 		}
 	}
-	else if ((fins_arp_in->dataOrCtrl == CONTROL) && (fins_arp_in->ctrlFrame.opcode == WRITEREQUEST)
+	else if ((fins_arp_in->dataOrCtrl == CONTROL) && (fins_arp_in->ctrlFrame.opcode == CTRL_SET_PARAM)
 			&& (fins_arp_in->destinationID.id == (unsigned char) ARPID))
 	{/**as a request received from the ethernet stub-- IP address is provided in this fins control frame*/
 
-		memcpy(fins_IP_address, fins_arp_in->ctrlFrame.paramterValue, PROTOCOLADDRSLEN);
+		memcpy(fins_IP_address, fins_arp_in->ctrlFrame.serialNum, PROTOCOLADDRSLEN);
 		target_IP_addrs = gen_IP_addrs(fins_IP_address[0],fins_IP_address[1],fins_IP_address[2],fins_IP_address[3]);
 
 		/**request initiated by the ethernet stub*/
@@ -95,9 +95,9 @@ void arp_out_ctrl(uint32_t sought_IP_addrs, struct finsFrame *fins_arp_out){
 	fins_arp_out->destinationID.id = ETHERSTUBID;
 	fins_arp_out->dataOrCtrl = CONTROL;
 	fins_arp_out->ctrlFrame.senderID = ARPID;
-	fins_arp_out->ctrlFrame.opcode = READREPLY;
+	fins_arp_out->ctrlFrame.opcode = CTRL_READ_PARAM_REPLY;
 	MAC_addrs_conversion(search_MAC_addrs(sought_IP_addrs, ptr_cacheHeader), fins_MAC_address);
-	fins_arp_out->ctrlFrame.paramterValue = fins_MAC_address;
+	fins_arp_out->ctrlFrame.serialNum = fins_MAC_address;
 }
 
 /**@brief This function sends out a fins frame that passes an arp request out to the network

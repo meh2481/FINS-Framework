@@ -2,11 +2,13 @@
  * @file udpHandling.c
  *
  *  @date Nov 28, 2010
- *      @author Abdallah Abdallah
+ *   @author Abdallah Abdallah
  */
 
 #include "udpHandling.h"
 #include "finstypes.h"
+
+#define	IP4_PT_UDP		17
 
 extern struct finssocket jinniSockets[MAX_sockets];
 extern finsQueue Jinni_to_Switch_Queue;
@@ -57,7 +59,7 @@ struct finsFrame *get_fake_frame() {
  *
  */
 
-int readFrom_fins(int senderid, int sockfd, u_char **buf, int *buflen,
+int UDPreadFrom_fins(int senderid, int sockfd, u_char **buf, int *buflen,
 		int symbol, struct sockaddr_in *address, int block_flag) {
 
 	/**TODO MUST BE FIXED LATER
@@ -75,6 +77,8 @@ int readFrom_fins(int senderid, int sockfd, u_char **buf, int *buflen,
 	 * It keeps looping as a bad method to implement the blocking feature
 	 * of recvfrom. In case it is not blocking then the while loop should
 	 * be replaced with only a single trial !
+	 * TODO Replace the dataqueue with a pipeline (file) this will make it easier
+	 * to emulate the file characteristics of the socket such as blocking and non-blocking
 	 *
 	 */
 
@@ -112,7 +116,38 @@ int readFrom_fins(int senderid, int sockfd, u_char **buf, int *buflen,
 	if (ff == NULL) {
 		//free(ff);
 		return (0);
-	} PRINT_DEBUG("PDU lenght %d",ff->dataFrame.pduLength);
+	}
+	PRINT_DEBUG("PDU lenght %d",ff->dataFrame.pduLength);
+
+	if (metadata_readFromElement(ff->dataFrame.metaData, "portsrc",(uint16_t *) &srcport)
+			== 0) {
+		addr_in->sin_port = 0;
+
+	}
+	if (metadata_readFromElement(ff->dataFrame.metaData, "ipsrc",(uint32_t *) &srcip) == 0) {
+		addr_in->sin_addr.s_addr = 0;
+
+	}
+
+	/**
+	 * making sure that the datagram coming from the destination we are connected to it
+	 * in case of connection previously done
+	 */
+
+	if (jinniSockets[index].connection_status > 0){
+
+		if ( (srcport != jinniSockets[index].dstport) || (srcip != jinniSockets[index].dst_IP ) )
+			{
+				PRINT_DEBUG("Wrong address, the socket is already connected to another destination");
+				return(0);
+
+
+			}
+
+
+	}
+
+
 
 	//*buf = (u_char *)malloc(sizeof(ff->dataFrame.pduLength));
 	//memcpy(*buf,ff->dataFrame.pdu,ff->dataFrame.pduLength);
@@ -127,20 +162,15 @@ int readFrom_fins(int senderid, int sockfd, u_char **buf, int *buflen,
 		//	freeFinsFrame(ff);
 
 		return (1);
-	} PRINT_DEBUG();
+	}
 
-	if (metadata_readFromElement(ff->dataFrame.metaData, "portsrc", &srcport)
-			== 0) {
-		address->sin_port = 0;
-		return (1);
-	}
-	if (metadata_readFromElement(ff->dataFrame.metaData, "ipsrc", &srcip) == 0) {
-		address->sin_addr.s_addr = 0;
-		return (1);
-	}
+	PRINT_DEBUG();
+
+
 
 	addr_in->sin_port = srcport;
 	addr_in->sin_addr.s_addr = srcip;
+
 
 	/**TODO Free the finsFrame
 	 * This is the final consumer
@@ -162,8 +192,7 @@ int jinni_UDP_to_fins(u_char *dataLocal, int len, uint16_t dstport,
 		uint32_t dst_IP_netformat, uint16_t hostport,
 		uint32_t host_IP_netformat) {
 
-	struct finsFrame *ff =
-			(struct finsFrame *) malloc(sizeof(struct finsFrame));
+	struct finsFrame *ff = (struct finsFrame *) malloc(sizeof(struct finsFrame));
 
 	metadata *udpout_meta = (metadata *) malloc(sizeof(metadata));
 
@@ -185,15 +214,17 @@ int jinni_UDP_to_fins(u_char *dataLocal, int len, uint16_t dstport,
 			host_IP_netformat);
 
 	uint32_t dstprt = dstport;
-	uint32_t hostprt = hostport;
-
-	metadata_writeToElement(udpout_meta, "dstport", &dstport, META_TYPE_INT);
-	metadata_writeToElement(udpout_meta, "srcport", &hostport, META_TYPE_INT);
+		uint32_t hostprt = hostport;
+		int protocol = IP4_PT_UDP;
+	metadata_writeToElement(udpout_meta, "dstport", &dstprt, META_TYPE_INT);
+	metadata_writeToElement(udpout_meta, "srcport", &hostprt, META_TYPE_INT);
 	metadata_writeToElement(udpout_meta, "dstip", &dst_IP_netformat,
 			META_TYPE_INT);
 	metadata_writeToElement(udpout_meta, "srcip", &host_IP_netformat,
 			META_TYPE_INT);
 
+	metadata_writeToElement(udpout_meta, "protocol", &protocol,
+				META_TYPE_INT);
 	ff->dataOrCtrl = DATA;
 	/**TODO get the address automatically by searching the local copy of the
 	 * switch table
@@ -240,8 +271,17 @@ void socket_udp(int domain, int type, int protocol, int sockfd, int fakeID,
 	insertjinniSocket(processid, sockfd, fakeID, type, protocol);
 
 	PRINT_DEBUG();
-	sprintf(clientName, CLIENT_CHANNEL_RX, processid, fakeID);
-	mkfifo(clientName, 0777);
+	if ( sprintf(clientName, CLIENT_CHANNEL_RX, processid, fakeID) < 0 ){
+		PRINT_DEBUG("sprintf Failed");
+	}
+
+	/** Crashing at error because there is no way to send a NACK
+	 * application process
+	 */
+	if  (mkfifo(clientName, 0777) == -1 ){
+		PRINT_DEBUG("mkfifo  Failed CRASH");
+		exit(1);
+	}
 	pipe_desc = open(clientName, O_WRONLY);
 	index = findjinniSocket(processid, sockfd);
 
@@ -334,7 +374,9 @@ void bind_udp(int sender, int sockfd, struct sockaddr *addr) {
 	 */
 	PRINT_DEBUG("%d,%d,%d",(address->sin_addr).s_addr, ntohs(address->sin_port),
 			address->sin_family);
-
+	/**
+	 * Binding
+	 */
 	jinniSockets[index].hostport = ntohs(address->sin_port);
 	jinniSockets[index].host_IP = (address->sin_addr).s_addr;
 
@@ -449,9 +491,10 @@ void write_udp(int senderid, int sockfd, int datalen, u_char *data) {
 	uint16_t dstport;
 	uint32_t host_IP;
 	uint32_t dst_IP;
-	u_char *dataLocal = (u_char *) malloc(datalen);
 	int len = datalen;
 	int index;
+
+
 
 	PRINT_DEBUG("");
 
@@ -493,7 +536,20 @@ void write_udp(int senderid, int sockfd, int datalen, u_char *data) {
 	/** addresses are in host format given that there are by default already filled
 	 * host IP and host port. Otherwise, a port and IP has to be assigned explicitly below */
 
+	//hostport = jinniSockets[index].hostport;
+	/**
+	 * Default current host port to be assigned is 58088
+	 * It is supposed to be randomly selected from the range found in
+	 * /proc/sys/net/ipv4/ip_local_port_range
+	 * default range in Ubuntu is 32768 - 61000
+	 * The value has been chosen randomly when the socket firsly inserted into the jinnisockets
+	 * check insertjinniSocket(processid, sockfd, fakeID, type, protocol);
+	 */
 	hostport = jinniSockets[index].hostport;
+	/**
+	 * the current value of host_IP is zero but to be filled later with
+	 * the current IP using the IPv4 modules unless a binding has occured earlier
+	 */
 	host_IP = jinniSockets[index].host_IP;
 	PRINT_DEBUG("");
 
@@ -531,15 +587,20 @@ void write_udp(int senderid, int sockfd, int datalen, u_char *data) {
 
 	return;
 
+
+
+
+
 } // end of write_udp
 
 
 void send_udp(int senderid, int sockfd, int datalen, u_char *data, int flags) {
+
+
 	uint16_t hostport;
 	uint16_t dstport;
 	uint32_t host_IP;
 	uint32_t dst_IP;
-	u_char *dataLocal = (u_char *) malloc(datalen);
 	int len = datalen;
 	int index;
 
@@ -602,7 +663,19 @@ void send_udp(int senderid, int sockfd, int datalen, u_char *data, int flags) {
 	 * host IP and host port. Otherwise, a port and IP has to be assigned explicitly below */
 
 	//hostport = jinniSockets[index].hostport;
-	hostport = 58088;
+	/**
+	 * Default current host port to be assigned is 58088
+	 * It is supposed to be randomly selected from the range found in
+	 * /proc/sys/net/ipv4/ip_local_port_range
+	 * default range in Ubuntu is 32768 - 61000
+	 * The value has been chosen randomly when the socket firsly inserted into the jinnisockets
+	 * check insertjinniSocket(processid, sockfd, fakeID, type, protocol);
+	 */
+	hostport = jinniSockets[index].hostport;
+	/**
+	 * the current value of host_IP is zero but to be filled later with
+	 * the current IP using the IPv4 modules unless a binding has occured earlier
+	 */
 	host_IP = jinniSockets[index].host_IP;
 	PRINT_DEBUG("");
 
@@ -705,11 +778,23 @@ void sendto_udp(int senderid, int sockfd, int datalen, u_char *data, int flags,
 	dstport = ntohs(address->sin_port); /** reverse it since it is in network order after application used htons */
 
 	dst_IP = ntohl(address-> sin_addr.s_addr);/** it is in network format since application used htonl */
+	/** addresses are in host format given that there are by default already filled
+	 * host IP and host port. Otherwise, a port and IP has to be assigned explicitly below */
 
-	//hostport = jinniSockets[index].hostport;
-	hostport = 58088;
-	//host_IP = jinniSockets[index].host_IP;
-	host_IP = IP4_ADR_P2N(172,31,54,87);
+	/**
+	 * Default current host port to be assigned is 58088
+	 * It is supposed to be randomly selected from the range found in
+	 * /proc/sys/net/ipv4/ip_local_port_range
+	 * default range in Ubuntu is 32768 - 61000
+	 * The value has been chosen randomly when the socket firstly inserted into the jinnisockets
+	 * check insertjinniSocket(processid, sockfd, fakeID, type, protocol);
+	 */
+	hostport = jinniSockets[index].hostport;
+	/**
+	 * the current value of host_IP is zero but to be filled later with
+	 * the current IP using the IPv4 modules unless a binding has occured earlier
+	 */
+	host_IP = jinniSockets[index].host_IP;
 
 	PRINT_DEBUG("");
 
@@ -768,15 +853,16 @@ void recvfrom_udp(int senderid, int sockfd, int datalen, int flags, int symbol) 
 
 	u_char *bufptr;
 	bufptr = buf;
-
+	struct sockaddr_in *address;
 	int buflen = 0;
 	int index;
 	int i;
-	struct sockaddr_in *address = (struct sockaddr_in *) malloc(
-			sizeof(struct sockaddr_in));
-
 	int blocking_flag;
-	blocking_flag = 1;
+
+	if (symbol == 1)
+		address = (struct sockaddr_in *) malloc(sizeof(struct sockaddr_in));
+	else
+		address = NULL;
 	/** TODO handle flags cases */
 	switch (flags) {
 
@@ -795,12 +881,13 @@ void recvfrom_udp(int senderid, int sockfd, int datalen, int flags, int symbol) 
 	}
 
 	PRINT_DEBUG("index = %d",index); PRINT_DEBUG();
+	blocking_flag = jinniSockets[index].blockingFlag;
 
 	/** the meta-data parameters are all passed by copy starting from this point
 	 *
 	 */
 
-	if (readFrom_fins(senderid, sockfd, bufptr, &buflen, symbol, address,
+	if (UDPreadFrom_fins(senderid, sockfd, bufptr, &buflen, symbol, address,
 			blocking_flag) == 1) {
 
 		if (symbol == 0) {
@@ -890,6 +977,7 @@ void recv_udp(int senderid, int sockfd, int datalen, int flags) {
 
 	PRINT_DEBUG("index = %d",index); PRINT_DEBUG();
 
+
 	/** the meta-data parameters are all passed by copy starting from this point
 	 *
 	 */
@@ -897,16 +985,17 @@ void recv_udp(int senderid, int sockfd, int datalen, int flags) {
 	 * this the difference between the call from here, and the call in case of
 	 * the function recvfrom_udp
 	 * */
-	if (readFrom_fins(senderid, sockfd, &buf, &buflen, 0, NULL, blocking_flag)
+	if (UDPreadFrom_fins(senderid, sockfd, &buf, &buflen, 0, NULL, blocking_flag)
 			== 1) {
 
 		sem_wait(jinniSockets[index].s);
 
-		ack_write(jinniSockets[index].jinniside_pipe_ds, senderid, sockfd);
-		buf[buflen] = '\0';
-		PRINT_DEBUG("%d",buflen ); PRINT_DEBUG("%s",buf);
-		write(jinniSockets[index].jinniside_pipe_ds, &buflen, sizeof(int));
-		write(jinniSockets[index].jinniside_pipe_ds, buf, buflen);
+			ack_write(jinniSockets[index].jinniside_pipe_ds, senderid, sockfd);
+			buf[buflen] = '\0';
+			PRINT_DEBUG("%d",buflen ); PRINT_DEBUG("%s",buf);
+			write(jinniSockets[index].jinniside_pipe_ds, &buflen, sizeof(int));
+			write(jinniSockets[index].jinniside_pipe_ds, buf, buflen);
+
 		sem_post(jinniSockets[index].as);
 		sem_post(jinniSockets[index].s);
 		PRINT_DEBUG();
@@ -917,7 +1006,7 @@ void recv_udp(int senderid, int sockfd, int datalen, int flags) {
 	} else {
 		PRINT_DEBUG("socketjinni failed to accomplish recv_udp");
 		sem_wait(jinniSockets[index].s);
-		nack_write(jinniSockets[index].jinniside_pipe_ds, senderid, sockfd);
+			nack_write(jinniSockets[index].jinniside_pipe_ds, senderid, sockfd);
 
 		sem_post(jinniSockets[index].as);
 
@@ -964,5 +1053,76 @@ void getpeername_udp(int senderid, int sockfd, int addrlen) {
 	sem_post(jinniSockets[index].as);
 
 	sem_post(jinniSockets[index].s);
+
+}
+
+
+void shutdown_udp(int senderid,int sockfd,int how){
+
+	/**
+	 *
+	 * TODO Implement the checking of the shut_RD, shut_RW flags before making any operations
+	 * applied on a TCP socket
+	 */
+
+	int index;
+
+
+
+	index = findjinniSocket(senderid, sockfd);
+	/** TODO unlock access to the jinnisockets */
+	if (index == -1) {
+		PRINT_DEBUG("socket descriptor not found into jinni sockets");
+		exit(1);
+	}
+
+	PRINT_DEBUG("index = %d",index); PRINT_DEBUG();
+
+
+	sem_wait(jinniSockets[index].s);
+
+		ack_write(jinniSockets[index].jinniside_pipe_ds, senderid, sockfd);
+
+
+	sem_post(jinniSockets[index].as);
+	sem_post(jinniSockets[index].s);
+
+
+
+
+
+
+}
+
+
+
+void setsockopt_udp(int senderid, int sockfd, int level, int optname, int optlen, void *optval){
+
+
+
+
+
+
+
+
+
+
+
+
+}
+
+
+void getsockopt_udp(int senderid, int sockfd, int level, int optname, int optlen, void *optval){
+
+
+
+
+
+
+
+
+
+
+
 
 }

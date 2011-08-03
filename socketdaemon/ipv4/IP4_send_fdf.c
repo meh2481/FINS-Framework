@@ -18,17 +18,20 @@ void IP4_send_fdf_in(struct ip4_header* pheader, struct ip4_packet* ppacket) {
 	char *data;
 	PRINT_DEBUG("IP4_send_fdf_in() called");
 	fins_frame->dataOrCtrl = DATA;
+	PRINT_DEBUG("protocol # %d",pheader->protocol);
 	switch (pheader->protocol) {
-	case IP4_PT_TCP:
-		fins_frame->destinationID.id = TCPID;
-		break;
-	case IP4_PT_UDP:
-		fins_frame->destinationID.id = UDPID;
-		break;
-	case IP4_PT_ICMP:
-		fins_frame->destinationID.id = ICMPID;// todo: ICMPID should be decided
-		break;
-	}PRINT_DEBUG();
+		case IP4_PT_TCP:
+			fins_frame->destinationID.id = TCPID;
+			break;
+		case IP4_PT_UDP:
+			fins_frame->destinationID.id = UDPID;
+			break;
+		case IP4_PT_ICMP:
+			fins_frame->destinationID.id = ICMPID;// todo: ICMPID should be decided
+			break;
+	}
+
+	PRINT_DEBUG();
 	fins_frame->destinationID.next = NULL;
 	fins_frame->dataFrame.directionFlag = UP;
 	fins_frame->dataFrame.pduLength = pheader->packet_length
@@ -49,6 +52,7 @@ void IP4_send_fdf_in(struct ip4_header* pheader, struct ip4_packet* ppacket) {
 
 	IP4addr srcaddress = ppacket->ip_src;
 	IP4addr dstaddress = ppacket->ip_dst;
+	PRINT_DEBUG("protocol # %d",ppacket->ip_proto);
 	uint16_t protocol = ppacket->ip_proto; /* protocol number should  be 17 from metadata */
 	/** Filling into the metadata with sourceIP, DestinationIP, and ProtocolNumber */
 
@@ -93,7 +97,7 @@ void IP4_send_fdf_out(struct finsFrame *ff, struct ip4_packet* ppacket,
 	(fins_frame->dataFrame).pdu = data;
 
 	//print_finsFrame(fins_frame);
-	free(ff);
+	//free(ff);
 	//fins_frame.dataFrame.metaData = ..... // todo: meta data needs to be filled with the required info.
 	sendToSwitch_IPv4(fins_frame);
 }

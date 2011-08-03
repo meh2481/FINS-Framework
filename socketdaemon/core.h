@@ -1,8 +1,8 @@
 /*
- * socketgeni.h
+ * @file socketgeni.h
  *
- *  Created on: Nov 26, 2010
- *      Author: Abdallah Abdallah
+ *  @date Nov 26, 2010
+ *      @author Abdallah Abdallah
  */
 
 #ifndef SOCKETGENI_H_
@@ -41,8 +41,8 @@ struct bind_call_msg {
 	struct sockaddr addr;
 
 };
-
-void jinni_init();
+void read_configurations();
+void commChannel_init();
 void Queues_init();
 
 /*-----------------------------------------------------------------------------

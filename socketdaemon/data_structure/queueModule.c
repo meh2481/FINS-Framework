@@ -9,6 +9,7 @@
  *
  */
 
+
 #include <queueModule.h>
 
 /**@brief initializes a queue buffer between the switch and the module
@@ -167,11 +168,12 @@ void cpy_fins_to_fins(struct finsFrame *dst, struct finsFrame *src) {
 		dst->dataOrCtrl = src->dataOrCtrl;
 		//memcpy(&dst->ctrlFrame, &src->ctrlFrame, sizeof(src->ctrlFrame));
 		dst->ctrlFrame.opcode = src->ctrlFrame.opcode;
-		dst->ctrlFrame.paramterID = src->ctrlFrame.paramterID;
-		dst->ctrlFrame.paramterValue = src->ctrlFrame.paramterValue;
-		dst->ctrlFrame.replyRecord = src->ctrlFrame.paramterValue;
+		dst->ctrlFrame.serialNum = src->ctrlFrame.serialNum;
+		//dst->ctrlFrame.replyRecord = src->ctrlFrame.paramterValue;
 		dst->ctrlFrame.senderID = src->ctrlFrame.senderID;
 		dst->ctrlFrame.serialNum = src->ctrlFrame.serialNum;
+		dst->ctrlFrame.name = src->ctrlFrame.name;
+		dst->ctrlFrame.data = src->ctrlFrame.data;
 	}
 
 }
@@ -204,7 +206,7 @@ void print_finsFrame(struct finsFrame *fins_in) {
 		}
 
 	} else if (fins_in->dataOrCtrl == CONTROL) {
-		PRINT_DEBUG("\nControl fins %d\n", fins_in->dataOrCtrl); PRINT_DEBUG("\nOpcode %d\n", fins_in->ctrlFrame.opcode); PRINT_DEBUG("\nParameter ID %d\n", fins_in->ctrlFrame.paramterID); PRINT_DEBUG("\nParameter Value %d\n", *(int *)(fins_in->ctrlFrame.paramterValue));
+		PRINT_DEBUG("\nControl fins %d\n", fins_in->dataOrCtrl); PRINT_DEBUG("\nOpcode %d\n", fins_in->ctrlFrame.opcode); PRINT_DEBUG("\nname %s\n", fins_in->ctrlFrame.name); //PRINT_DEBUG("\nParameter Value %d\n", *(int *)(fins_in->ctrlFrame.paramterValue));
 		//		PRINT_DEBUG("\nReply Record (first element) %x\n", fins_in->ctrlFrame.replyRecord);
 		PRINT_DEBUG("\nSender Id %d\n", fins_in->ctrlFrame.senderID); PRINT_DEBUG("\nSerial number %d\n", fins_in->ctrlFrame.serialNum);
 	}
@@ -261,3 +263,4 @@ int freeFinsFrame(struct finsFrame *f) {
 	return (1);
 
 }
+

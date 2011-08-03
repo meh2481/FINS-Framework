@@ -40,6 +40,7 @@
 
 #include "udpHandling.h"
 #include "tcpHandling.h"
+#include "icmpHandling.h"
 
 /** FINS Sockets database related defined constants */
 #define MAX_sockets 100
@@ -69,6 +70,10 @@
 #define accept_call 16
 #define accept4_call 17
 #define shutdown_call 18
+/**
+ *
+ */
+#define close_call 19
 
 struct socket_call_msg {
 	int domain;
@@ -78,6 +83,59 @@ struct socket_call_msg {
 	int fakeID;
 
 };
+
+enum sockOptions {
+
+
+
+
+
+	FSO_DEBUG = 1,
+	FSO_REUSEADDR,
+	FSO_TYPE	,
+	FSO_ERROR	,
+	FSO_DONTROUTE	,
+	FSO_BROADCAST	,
+	FSO_SNDBUF	,
+	FSO_RCVBUF	,
+	FSO_KEEPALIVE	,
+	FSO_OOBINLINE	,
+	FSO_NO_CHECK	,
+	FSO_PRIORITY,
+	FSO_LINGER	,
+	FSO_BSDCOMPAT	,  		/** 14 */
+	FSO_REUSEPORT = 15 ,  /** FSO_REUSEPORT = 15 */
+	FSO_PASSCRED= 16,
+	FSO_PEERCRED ,
+	FSO_RCVLOWAT,
+	FSO_SNDLOWAT,
+	FSO_RCVTIMEO,
+	FSO_SNDTIMEO,   /** SO_SNDTIMEO	21 */
+
+	FSO_BINDTODEVICE = 25,
+	FSO_TIMESTAMP= 29,
+	FSO_ACCEPTCONN = 30,
+	 FSO_PEERSEC = 31,
+	FSO_SNDBUFFORCE	=32,
+	FSO_RCVBUFFORCE=	33,
+
+
+
+} ;
+
+
+struct tcp_Parameters
+{
+
+	 int SHUT_RD;
+	 int SHUT_WR ;
+
+
+
+
+
+};
+
 
 struct finssocket {
 	/** variables tells a connect call has been called over this socket or not in order to
@@ -93,6 +151,18 @@ struct finssocket {
 	int jinniside_pipe_ds; /**  the descriptor to access the pipe from the jinni side */
 	int type;
 	int protocol;
+
+	/** check the opt_name to find which bit to access in the options variable then use
+	 * the following code to handle the bits individually
+	 * setting a bit   number |= 1 << x;  That will set bit x.
+	 * Clearing a bit number &= ~(1 << x); That will clear bit x.
+	 * The XOR operator (^) can be used to toggle a bit. number ^= 1 << x; That will toggle bit x.
+	 * Checking a bit      value = number & (1 << x);
+	 */
+	uint32_t socketoptions;
+	int blockingFlag;
+	struct tcp_Parameters tcpParameters;
+
 	/** All the above already initialized using the insert function
 	 * the remaining below is handled using the update function*/
 	uint16_t hostport; //host format
@@ -121,6 +191,7 @@ struct socketIdentifier {
 #define CLIENT_CHANNEL_RX "/tmp/fins/processID_%d_RX_%d"
 
 void init_jinnisockets();
+int randoming(int min, int max);
 int checkjinniSocket(pid_t target1, int target2);
 int matchjinniSocket(uint16_t dstport, uint32_t dstip, int protocol);
 int findjinniSocket(pid_t target1, int target2);
@@ -141,15 +212,17 @@ void connect_call_handler(int senderid);
 void getpeername_call_handler(int senderid);
 void send_call_handler(int senderid);
 void recv_call_handler(int senderid);
-void sendto_call_handler();
+void sendto_call_handler(int senderid);
 void recvfrom_call_handler(int senderid);
-void sendmsg_call_handler();
-void recvmsg_call_handler();
-void getsockopt_call_handler();
-void setsockopt_call_handler();
-void listen_call_handler();
-void accept_call_handler();
-void accept4_call_handler();
-void shutdown_call_handler();
+void sendmsg_call_handler(int senderid);
+void recvmsg_call_handler(int senderid);
+void getsockopt_call_handler(int senderid);
+void setsockopt_call_handler(int senderid);
+void listen_call_handler(int senderid);
+void accept_call_handler(int senderid);
+void accept4_call_handler(int senderid);
+void shutdown_call_handler(int senderid);
+
+void close_call_handler(int senderid);
 
 #endif /* HANDLERS_H_ */

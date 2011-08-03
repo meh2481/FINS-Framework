@@ -6,17 +6,20 @@
 C_SRCS += \
 ../tcp/tcp.c \
 ../tcp/tcp_in.c \
-../tcp/tcp_out.c 
+../tcp/tcp_out.c \
+../tcp/tcp_queue.c 
 
 OBJS += \
 ./tcp/tcp.o \
 ./tcp/tcp_in.o \
-./tcp/tcp_out.o 
+./tcp/tcp_out.o \
+./tcp/tcp_queue.o 
 
 C_DEPS += \
 ./tcp/tcp.d \
 ./tcp/tcp_in.d \
-./tcp/tcp_out.d 
+./tcp/tcp_out.d \
+./tcp/tcp_queue.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes
