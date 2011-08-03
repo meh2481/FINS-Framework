@@ -396,8 +396,16 @@ void ICMP_control_handler(struct finsFrame *ff)
 void ICMP_create_error(struct finsFrame *ff, uint8_t Type, uint8_t Code)
 {
 	struct finsFrame* ffout = (struct finsFrame* )(malloc(sizeof(struct finsFrame)));
-	int totallen = UNREACH_INCLUDE_DATA_SIZE;	//How many bytes we want our ICMP message to be
+	int totallen = 0;	//How many bytes we want our ICMP message to be
 	int checksum = 0;
+
+	//Manually grab an int value from the first four bytes of this data
+	int i;
+	for(i = 0; i < sizeof(int); i++)
+	{
+		totallen += ((int)(ff->ctrlFrame.data) << (8 * i));
+		(ff->ctrlFrame.data)++;	//increment pointer
+	}
 
 	//How many bytes is all this?
 	totallen += ICMP_HEADER_SIZE;	//The length we want is the length of the IP data we want to include + the 8 byte ICMP header
@@ -444,35 +452,103 @@ void ICMP_create_control_error(struct finsFrame* ff, uint8_t Type, uint8_t Code)
 {
 	struct finsFrame* ffout = (struct finsFrame* )(malloc(sizeof(struct finsFrame)));
 	int checksum = 0;
+	unsigned char* cName = NULL;
+	unsigned char* cData = NULL;
+	int iLen = 0;
 
 	ffout->dataOrCtrl = CONTROL;	//We're sending a control here
-	ffout->destinationID.id = UDPID;	//Go to the UDP stub. TODO: Should probably send one to TCP whenever TCP is finished
+	ffout->destinationID.id = UDPID;	//Go to the UDP stub. TODO: Should probably also send one to TCP whenever TCP is finished
 	ffout->destinationID.next = NULL;
-	//ffout->dataFrame.directionFlag = DOWN;	//Out
-	//ffout->dataFrame.pduLength = UNREACH_INCLUDE_DATA_SIZE;	//Make the total length correct
-	//ffout->dataFrame.pdu = (unsigned char *)malloc(totallen);	//Allocate memory for the data we'll be sticking in
-	//metadata_create(ffout->dataFrame.metaData);
-	//Fill the metadata with dest IP.
-	//metadata_writeToElement(ffout->dataFrame.metaData, "ipdst", &(((struct ip4_packet*) ff->ctrlFrame.data)->ip_src), CONFIG_TYPE_INT); //TODO: CONFIG_TYPE_INT, right?
-	//I treat all the ICMP stuff as raw data, rather than encapsulating it in structs, due to working with such structs earlier this summer
-	//and running into a ton of little-vs-big-endian issues. Handling the raw data this way is easier for me than remembering to htons()
-	//everything, especially because most ICMP headers contain variable-sized data anyway.
+	ffout->ctrlFrame.senderID = ICMPID;	//Coming from the ICMP module
+	ffout->ctrlFrame.opcode = CTRL_ERROR;	//Error code comin' through!
+	ffout->ctrlFrame.serialNum = 0;		//No use for this currently. Probably should use for some kind of tracking later.
+	//Figure out the name from the passed type and code
+	if(Type == TYPE_DESTUNREACH)
+	{
+		if(Code == CODE_NETUNREACH)
+		{
+			cName = (unsigned char*) malloc(strlen("DUnetunreach") + 1);
+			strcpy(cName, "DUnetunreach");
+		}
+		else if(Code == CODE_HOSTUNREACH)
+		{
+			cName = (unsigned char*) malloc(strlen("DUhostunreach") + 1);
+			strcpy(cName, "DUhostunreach");
+		}
+		else if(Code == CODE_PROTOUNREACH)
+		{
+			cName = (unsigned char*) malloc(strlen("DUprotounreach") + 1);
+			strcpy(cName, "DUprotounreach");
+		}
+		else if(Code == CODE_PORTUNREACH)
+		{
+			cName = (unsigned char*) malloc(strlen("DUportunreach") + 1);
+			strcpy(cName, "DUportunreach");
+		}
+		else if(Code == CODE_FRAGNEEDED)
+		{
+			cName = (unsigned char*) malloc(strlen("DUfragneeded") + 1);
+			strcpy(cName, "DUfragneeded");
+		}
+		else if(Code == CODE_SRCROUTEFAIL)
+		{
+			cName = (unsigned char*) malloc(strlen("DUsrcroute") + 1);
+			strcpy(cName, "DUsrcroute");
+		}
+		else
+		{
+			PRINT_DEBUG("Unrecognized code. Dropping...");
+			return;
+		}
+	}
+	else if(Type == TYPE_TTLEXCEED)
+	{
+		if(Code == CODE_TTLEXCEEDED)
+		{
+			cName = (unsigned char*) malloc(strlen("TTLexceeded") + 1);
+			strcpy(cName, "TTLexceeded");
+		}
+		else if(Code == CODE_DEFRAGTIMEEXCEEDED)
+		{
+			cName = (unsigned char*) malloc(strlen("TTLfragtime") + 1);
+			strcpy(cName, "TTLfragtime");
+		}
+		else
+		{
+			PRINT_DEBUG("Unrecognized code. Dropping...");
+			return;
+		}
+	}
+	else
+	{
+		PRINT_DEBUG("Unrecognized type. Dropping...");
+		return;
+	}
 
-	PRINT_DEBUG("");
-	//Fill in the ICMP header data.
-	//ffout->dataFrame.pdu[0] = Type; //Fill in the correct type and code
-	//ffout->dataFrame.pdu[1] = Code;
-	//Clear the checksum and "unused" fields
-	memset(&(ffout->ctrlFrame.data), 0, ICMP_HEADER_SIZE - 2);
+	//Stick the right stuff into the data
+	//Start by ripping off the ICMP header from the original data
+	ff->dataFrame.pdu += ICMP_HEADER_SIZE;
+	ff->dataFrame.pduLength -= ICMP_HEADER_SIZE;
 
-	//Copy the rest of the data over
-	memcpy(&(ffout->ctrlFrame.data[3]), ff->dataFrame.pdu, ff->dataFrame.pduLength);
+	//Get the total length of the data we're sending inside the control frame's data field
+	iLen = ff->dataFrame.pduLength;
 
-	//Compute the checksum
-	checksum = ICMP_checksum(ffout);
-	//And set the checksum field(s)
-	ffout->dataFrame.pdu[2] = checksum >> 8;
-	ffout->dataFrame.pdu[3] = (checksum & 0xFF);
+	//Now create the data
+	cData = (unsigned char*) malloc(iLen + sizeof(int));	//With enough room for the size at the beginning
+
+	//Stick in the size of the data
+	int i;
+	for(i = 0; i < sizeof(int); i++)
+	{
+		cData[i] = (iLen >> (sizeof(int) - (8 * i + 1))) & 0xFF;
+	}
+
+	//Now copy this data into cData
+	memcpy(&(cData[4]), ff->dataFrame.pdu, iLen);
+
+	//Now copy the name and data fields into the final finsFrame
+	ffout->ctrlFrame.data = cData;
+	ffout->ctrlFrame.name = cName;
 
 	//Done! Send out the frame
 	ICMP_send_FF(ffout);
